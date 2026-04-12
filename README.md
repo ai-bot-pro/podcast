@@ -1,3 +1,5 @@
+![aipodcast](https://github.com/user-attachments/assets/b78dd807-9e27-4f66-84c0-2a78b9b14388)
+
 # AI Bot Pro — Podcast
 
 [English](./README.md) | [中文](./README_CN.md)
