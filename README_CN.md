@@ -1,4 +1,13 @@
+![aipodcast](https://github.com/user-attachments/assets/b78dd807-9e27-4f66-84c0-2a78b9b14388)
+
 # AI Bot Pro — Podcast
+
+<p align="center">
+  <a href="https://pypi.org/project/gen-podcast/"><img src="https://img.shields.io/pypi/v/gen-podcast?style=for-the-badge&logo=pypi&logoColor=white" alt="PyPI"></a>
+  <a href="https://pypi.org/project/gen-podcast/"><img src="https://img.shields.io/pypi/pyversions/gen-podcast?style=for-the-badge&logo=python&logoColor=white" alt="Python"></a>
+  <a href="https://github.com/ai-bot-pro/podcast/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
+  <a href="https://weedge.github.io/about/"><img src="https://img.shields.io/badge/Built%20by-weedge-blueviolet?style=for-the-badge" alt="Built by weedge"></a>
+</p>
 
 [English](./README.md) | [中文](./README_CN.md)
 
@@ -55,8 +64,11 @@ podcast/
 
 ```bash
 # 建议 Python 3.11+
+pip install gen-podcast
+
+# 或从源码安装（开发模式）
 cd podcast
-pip install -e .
+make install   # 等同于: pip install -e .
 ```
 
 ---
@@ -94,11 +106,11 @@ cp .env.example .env
 
 ```bash
 # 英文播客
-python -m podcast.gen_podcast run \
+gen-podcast run \
     "https://en.wikipedia.org/wiki/Large_language_model"
 
 # 中文播客（指定中文语音）
-python -m podcast.gen_podcast run \
+gen-podcast run \
     --role-tts-voices zh-CN-YunjianNeural \
     --role-tts-voices zh-CN-XiaoxiaoNeural \
     --language zh \
@@ -106,7 +118,7 @@ python -m podcast.gen_podcast run \
     "https://en.wikipedia.org/wiki/Large_language_model"
 
 # 多来源 + 发布到线上
-python -m podcast.gen_podcast run \
+gen-podcast run \
     --role-tts-voices zh-CN-YunjianNeural \
     --role-tts-voices zh-CN-XiaoxiaoNeural \
     --language zh \
@@ -115,6 +127,9 @@ python -m podcast.gen_podcast run \
     "https://www.youtube.com/watch?v=aR6CzM0x-g0" \
     "https://en.wikipedia.org/wiki/Large_language_model" \
     "/path/to/paper.pdf"
+
+# 或使用 make（通过 ARGS 传递额外参数）
+make gen-podcast ARGS="--language zh https://en.wikipedia.org/wiki/Large_language_model"
 ```
 
 `run` 参数说明：
@@ -231,6 +246,21 @@ Cloudflare R2 上传（音频 + 封面）
        │
        ▼
 Cloudflare D1 写入元数据
+```
+
+---
+
+## Make 命令
+
+```bash
+make help            # 显示所有可用命令
+make install         # 以开发模式安装包
+make gen-podcast     # 运行 gen-podcast CLI（通过 ARGS="..." 传递额外参数）
+make build           # 构建源码包和 wheel 包
+make dist-local      # 本地安装构建的 wheel 包
+make publish-test    # 发布到 TestPyPI
+make publish         # 发布到 PyPI
+make clean           # 清理构建产物
 ```
 
 ---

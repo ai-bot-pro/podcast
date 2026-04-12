@@ -7,7 +7,7 @@ where = ["."]
 include = ["podcast*"]
 
 [project]
-name = "podcast"
+name = "gen-podcast"
 version = "0.1.0"
 authors = [{ name = "weedge", email = "weege007@gmail.com" }]
 description = "AI-powered podcast generation: extract content, generate scripts via LLM, synthesize speech"

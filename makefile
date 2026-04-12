@@ -1,0 +1,32 @@
+.PHONY: install run build clean dist-local publish-test publish help
+
+PYTHON ?= python3
+PIP ?= pip
+
+help: ## Show this help
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
+
+install: ## Install the package in editable mode with all dependencies
+	$(PIP) install -e .
+
+clean: ## Remove build artifacts
+	rm -rf dist/ build/ *.egg-info podcast/*.egg-info gen_podcast.egg-info
+
+build: clean ## Build source and wheel distributions
+	$(PIP) install --upgrade build
+	$(PYTHON) -m build
+
+gen-podcast: ## Run gen-podcast CLI run command(pass ARGS="..." for extra arguments)
+	gen-podcast run $(ARGS)
+
+dist-local: build ## Install the built wheel locally
+	$(PIP) install dist/*.whl --force-reinstall
+
+publish-test: build ## Publish package to TestPyPI (https://test.pypi.org/)
+	$(PIP) install --upgrade twine
+	$(PYTHON) -m twine upload --repository testpypi dist/*
+
+publish: build ## Publish package to PyPI (https://pypi.org/)
+	$(PIP) install --upgrade twine
+	$(PYTHON) -m twine upload dist/*

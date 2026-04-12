@@ -2,6 +2,13 @@
 
 # AI Bot Pro — Podcast
 
+<p align="center">
+  <a href="https://pypi.org/project/gen-podcast/"><img src="https://img.shields.io/pypi/v/gen-podcast?style=for-the-badge&logo=pypi&logoColor=white" alt="PyPI"></a>
+  <a href="https://pypi.org/project/gen-podcast/"><img src="https://img.shields.io/pypi/pyversions/gen-podcast?style=for-the-badge&logo=python&logoColor=white" alt="Python"></a>
+  <a href="https://github.com/ai-bot-pro/podcast/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
+  <a href="https://weedge.github.io/about/"><img src="https://img.shields.io/badge/Built%20by-weedge-blueviolet?style=for-the-badge" alt="Built by weedge"></a>
+</p>
+
 [English](./README.md) | [中文](./README_CN.md)
 
 An AI-powered podcast generation tool: automatically extract text from any source (webpage, YouTube, PDF) → generate multi-role dialogue scripts via Gemini LLM → synthesize speech with Edge TTS → store in Cloudflare R2 + Cloudflare D1.
@@ -57,8 +64,11 @@ podcast/
 
 ```bash
 # Python 3.11+ recommended
+pip install gen-podcast
+
+# Or install from source in editable mode
 cd podcast
-pip install -e .
+make install   # equivalent to: pip install -e .
 ```
 
 ---
@@ -96,11 +106,11 @@ cp .env.example .env
 
 ```bash
 # English podcast
-python -m podcast.gen_podcast run \
+gen-podcast run \
     "https://en.wikipedia.org/wiki/Large_language_model"
 
 # Chinese podcast (specify Chinese voices)
-python -m podcast.gen_podcast run \
+gen-podcast run \
     --role-tts-voices zh-CN-YunjianNeural \
     --role-tts-voices zh-CN-XiaoxiaoNeural \
     --language zh \
@@ -108,7 +118,7 @@ python -m podcast.gen_podcast run \
     "https://en.wikipedia.org/wiki/Large_language_model"
 
 # Multiple sources + publish
-python -m podcast.gen_podcast run \
+gen-podcast run \
     --role-tts-voices zh-CN-YunjianNeural \
     --role-tts-voices zh-CN-XiaoxiaoNeural \
     --language zh \
@@ -117,6 +127,9 @@ python -m podcast.gen_podcast run \
     "https://www.youtube.com/watch?v=aR6CzM0x-g0" \
     "https://en.wikipedia.org/wiki/Large_language_model" \
     "/path/to/paper.pdf"
+
+# Or use make (pass extra arguments via ARGS)
+make gen-podcast ARGS="--language zh https://en.wikipedia.org/wiki/Large_language_model"
 ```
 
 `run` options:
@@ -233,6 +246,21 @@ Cloudflare R2 upload (audio + cover)
        │
        ▼
 Cloudflare D1 metadata insert
+```
+
+---
+
+## Make Commands
+
+```bash
+make help            # Show all available commands
+make install         # Install the package in editable mode
+make gen-podcast     # Run gen-podcast CLI (pass ARGS="..." for extra arguments)
+make build           # Build source and wheel distributions
+make dist-local      # Install the built wheel locally
+make publish-test    # Publish package to TestPyPI
+make publish         # Publish package to PyPI
+make clean           # Remove build artifacts
 ```
 
 ---
