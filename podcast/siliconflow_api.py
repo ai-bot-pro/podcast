@@ -3,7 +3,7 @@ import io
 import os
 import logging
 import time
-from typing import List
+from typing import Any, List
 
 import typer
 from dotenv import load_dotenv
@@ -14,6 +14,20 @@ import requests
 load_dotenv(override=True)
 
 app = typer.Typer()
+
+
+def _siliconflow_error_message(body: dict) -> str | None:
+    """Return a human-readable error string, or None if body looks successful."""
+    err = body.get("error")
+    if err is not None:
+        if isinstance(err, dict):
+            return str(err.get("message", err))
+        return str(err)
+    code = body.get("code", 0)
+    data = body.get("data")
+    if code != 0 and not data:
+        return str(body.get("message") or f"code={code}")
+    return None
 
 
 @app.command("gen_image")
@@ -43,18 +57,35 @@ def gen_image(
 
     while True:
         try:
-            response = requests.post(url, json=payload, headers=headers)
-            response = response.json()
-            # print(response)
-            if response.get("code", 0) != 0 and response.get("data", None) is None:
-                raise Exception(response.get("message"))
+            resp = requests.post(url, json=payload, headers=headers, timeout=120)
+            try:
+                body: Any = resp.json()
+            except ValueError:
+                raise RuntimeError(
+                    f"SiliconFlow non-JSON response HTTP {resp.status_code}: "
+                    f"{resp.text[:800]!r}"
+                ) from None
+            if not isinstance(body, dict):
+                raise RuntimeError(
+                    f"SiliconFlow JSON root must be an object, got {type(body).__name__}: "
+                    f"{repr(body)[:400]}"
+                )
+            msg = _siliconflow_error_message(body)
+            if msg:
+                raise RuntimeError(msg)
+            data = body.get("data")
+            if data is None:
+                raise RuntimeError(
+                    "SiliconFlow response missing 'data' "
+                    f"(HTTP {resp.status_code}): {repr(body)[:400]}"
+                )
         except Exception as e:
             logging.error(f"requests error: {e}")
             time.sleep(3)
             continue
         break
 
-    return response.get("data", [])
+    return data
 
 
 @app.command("save_image_from_url")
@@ -105,8 +136,16 @@ def save_gen_image(
         raise Exception("no gen image")
 
     for img in img_data:
-        url = img.get("url", "")
-        return save_image_from_url(url=url, file_name=file_name, save_dir=save_dir)
+        if isinstance(img, dict):
+            url = img.get("url", "") or ""
+        elif isinstance(img, str):
+            url = img
+        else:
+            logging.warning(f"skip unexpected image entry type {type(img)}: {img!r}")
+            continue
+        if url:
+            return save_image_from_url(url=url, file_name=file_name, save_dir=save_dir)
+    raise ValueError("no image URL in SiliconFlow response data")
 
 
 r"""

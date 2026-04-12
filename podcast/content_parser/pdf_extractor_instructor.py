@@ -14,9 +14,22 @@ from .table import table
 app = typer.Typer()
 
 
+def _configure_pymupdf_for_text_extraction() -> None:
+    """Suppress MuPDF ICC errors (e.g. cmsOpenProfileFromMem failed) on PDFs with bad profiles."""
+    try:
+        pymupdf.TOOLS.set_icc(False)
+    except (AttributeError, TypeError):
+        pass
+    try:
+        pymupdf.TOOLS.mupdf_display_errors(False)
+    except (AttributeError, TypeError):
+        pass
+
+
 class PDFExtractor:
     def extract_content(self, file_path: str) -> str:
         try:
+            _configure_pymupdf_for_text_extraction()
             doc = pymupdf.open(file_path)
             content = " ".join(page.get_text() for page in doc)
             doc.close()

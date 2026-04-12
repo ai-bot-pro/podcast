@@ -24,7 +24,13 @@ class ContentExtractor:
         if not os.path.exists(save_dir) and is_save and save_dir:
             os.makedirs(save_dir)
 
+    @staticmethod
+    def _expand_source_path(source: str) -> str:
+        return os.path.expanduser(source.strip())
+
     def is_url(self, source: str) -> bool:
+        if os.path.isfile(self._expand_source_path(source)):
+            return False
         try:
             # If the source doesn't start with a scheme, add 'https://'
             if not source.startswith(("http://", "https://")):
@@ -56,8 +62,9 @@ class ContentExtractor:
                     )
                     return self.website_extractor.extract_content(source)
             elif source.lower().endswith(".pdf"):
-                self._file_name = get_pdf_file_name(source)
-                return self.pdf_extractor.extract_content(source)
+                pdf_path = self._expand_source_path(source)
+                self._file_name = get_pdf_file_name(pdf_path)
+                return self.pdf_extractor.extract_content(pdf_path)
             else:
                 raise ValueError("Unsupported source type")
         except Exception as e:

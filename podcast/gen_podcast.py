@@ -14,7 +14,13 @@ from .insert_podcast import insert_podcast_to_d1
 app = typer.Typer()
 
 
+def _expand_source_path(source: str) -> str:
+    return os.path.expanduser(source.strip())
+
+
 def is_url(source: str) -> bool:
+    if os.path.isfile(_expand_source_path(source)):
+        return False
     try:
         # If the source doesn't start with a scheme, add 'https://'
         if not source.startswith(("http://", "https://")):
@@ -27,7 +33,7 @@ def is_url(source: str) -> bool:
 
 
 def is_file(source: str) -> bool:
-    return os.path.isfile(source)
+    return os.path.isfile(_expand_source_path(source))
 
 
 @app.command("get_source_type")

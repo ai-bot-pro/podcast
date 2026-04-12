@@ -206,11 +206,11 @@ def insert_podcast_to_d1(
     res = d1_table_query(db_id, sql, sql_params)
     if res["success"] is True:
         if is_published:
-            logging.info(
+            print(
                 f"insert podcast success, url: https://podcast-997.pages.dev/podcast/{podcast.pid}"
             )
         else:
-            logging.info("insert podcast success")
+            print("insert podcast success")
     else:
         logging.error(f"insert podcast failed, res: {res}")
     return res["success"]
@@ -283,6 +283,7 @@ if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(pathname)s:%(lineno)d - %(funcName)s - %(message)s",
-        handlers=[logging.StreamHandler()],
+        handlers=[
+            logging.StreamHandler()],
     )
     app()
