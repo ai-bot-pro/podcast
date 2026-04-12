@@ -5,7 +5,7 @@
 An AI-powered podcast generation tool: automatically extract text from any source (webpage, YouTube, PDF) → generate multi-role dialogue scripts via Gemini LLM → synthesize speech with Edge TTS → store in Cloudflare R2 + Cloudflare D1.
 
 - AI Podcast: https://podcast-997.pages.dev/
-- AI Podcast UI: https://github.com/ai-bot-pro/react-nextjs-web-podcast
+- AI Podcast UI & Cloudflare Worker: https://github.com/ai-bot-pro/react-nextjs-web-podcast
 
 ---
 

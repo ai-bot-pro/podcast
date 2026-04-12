@@ -5,7 +5,7 @@
 AI 驱动的播客生成工具：从任意内容（网页、YouTube、PDF）自动提取文本 → Gemini LLM 生成多角色对话脚本 → Edge TTS 语音合成 → Cloudflare R2 存储 + Cloudflare D1 数据库入库。
 
 - AI Podcast: https://podcast-997.pages.dev/
-- AI Podcast UI: https://github.com/ai-bot-pro/react-nextjs-web-podcast
+- AI Podcast UI & Cloudflare Worker: https://github.com/ai-bot-pro/react-nextjs-web-podcast
 
 ---
 
