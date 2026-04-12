@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=61.2", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["podcast*"]
+
+[project]
+name = "podcast"
+version = "0.1.0"
+authors = [{ name = "weedge", email = "weege007@gmail.com" }]
+description = "AI-powered podcast generation: extract content, generate scripts via LLM, synthesize speech"
+readme = "README.md"
+requires-python = ">=3.10"
+keywords = ["podcast", "tts", "llm", "gemini", "edge-tts"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    # CLI
+    "typer",
+    # Data validation
+    "pydantic",
+    # Env vars
+    "python-dotenv",
+    # LLM structured output (Google Gemini; google.genai SDK)
+    "google-genai>=1.0",
+    "instructor",
+    "jsonref",
+    # TTS (Microsoft Edge)
+    "edge-tts",
+    # Audio processing
+    "pydub",
+    # Image processing
+    "pillow",
+    # Cloud storage (Cloudflare R2 / S3)
+    "boto3",
+    "tqdm",
+    # Web scraping
+    "requests",
+    "beautifulsoup4",
+    # PDF extraction
+    "pymupdf",
+    # YouTube transcript
+    "youtube-transcript-api",
+    # Translation
+    "deep-translator",
+    # Console tables
+    "rich",
+    # Audio metadata
+    "mutagen",
+]
+
+[project.scripts]
+gen-podcast = "podcast.gen_podcast:app"

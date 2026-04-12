@@ -1,0 +1,245 @@
+# AI Bot Pro — Podcast
+
+[English](./README.md) | [中文](./README_CN.md)
+
+AI 驱动的播客生成工具：从任意内容（网页、YouTube、PDF）自动提取文本 → Gemini LLM 生成多角色对话脚本 → Edge TTS 语音合成 → Cloudflare R2 存储 + Cloudflare D1 数据库入库。
+
+AI Podcast：https://podcast-997.pages.dev/
+
+---
+
+## 功能概览
+
+| 步骤          | 说明                                                            |
+| ------------- | --------------------------------------------------------------- |
+| **内容抓取**  | 支持网页（BeautifulSoup）、YouTube（字幕/转写）、PDF（PyMuPDF） |
+| **脚本生成**  | Gemini（`google-genai` + `instructor`）流式生成多角色播客对话   |
+| **语音合成**  | Microsoft Edge TTS，支持中英日韩等多语言，带指数退避重试        |
+| **封面生成**  | SiliconFlow AI 图像生成，自动压缩后上传 Cloudflare R2           |
+| **存储/入库** | Cloudflare R2（音频/图片）+ Cloudflare D1（元数据）             |
+
+---
+
+## 目录结构
+
+```
+podcast/
+├── pyproject.toml
+├── .env.example
+├── podcast/
+│   ├── gen_podcast.py              # 端到端入口（CLI）
+│   ├── content_parser_tts.py       # 内容提取 + TTS
+│   ├── insert_podcast.py           # 上传 R2 + 写入 D1
+│   ├── audio_length.py
+│   ├── image_compression.py
+│   ├── siliconflow_api.py
+│   ├── aws/
+│   │   └── upload.py               # Cloudflare R2（boto3）
+│   ├── cloudflare/
+│   │   └── rest_api.py             # D1 REST API
+│   └── content_parser/
+│       ├── types.py                # 语言代码映射
+│       ├── content_extractor_instructor.py
+│       ├── pdf_extractor_instructor.py
+│       ├── website_extractor_instructor.py
+│       ├── youtube_transcriber_instructor.py
+│       └── table/
+│           └── podcast.py          # LLM 提示词 + 结构化输出
+└── audios/                         # 生成的音频（已 gitignore）
+```
+
+---
+
+## 安装
+
+```bash
+# 建议 Python 3.11+
+cd podcast
+pip install -e .
+```
+
+---
+
+## 环境变量配置
+
+复制 `.env.example` 为 `.env` 并填写：
+
+```bash
+cp .env.example .env
+```
+
+| 变量                    | 说明                                                          |
+| ----------------------- | ------------------------------------------------------------- |
+| `GOOGLE_API_KEY`        | Google Gemini API 密钥                                        |
+| `GEMINI_MODEL`          | 模型 ID，默认 `gemini-3-flash-preview`（不含 `models/` 前缀） |
+| `GEMINI_FALLBACK_MODEL` | 503 过载时自动降级的备用模型（可选，如 `gemini-2.5-flash`）   |
+| `GEMINI_MAX_RETRIES`    | LLM 重试次数，默认 `6`                                        |
+| `GEMINI_RETRY_BASE_SEC` | 重试基础等待秒数（指数退避），默认 `2`                        |
+| `ROUND_CN`              | 播客对话轮数（可选，默认随机 20–50）                          |
+| `PODCAST_D1_DB_ID`      | Cloudflare D1 数据库 ID                                       |
+| `CLOUDFLARE_API_KEY`    | Cloudflare API Token                                          |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账号 ID                                            |
+| `CLOUDFLARE_ACCESS_KEY` | R2 Access Key                                                 |
+| `CLOUDFLARE_SECRET_KEY` | R2 Secret Key                                                 |
+| `CLOUDFLARE_REGION`     | R2 区域，默认 `apac`                                          |
+| `S3_BUCKET_URL`         | R2 公开访问基础 URL                                           |
+| `SILICONCLOUD_API_KEY`  | SiliconFlow API 密钥（封面生成）                              |
+
+---
+
+## 快速使用
+
+### 端到端生成（推荐）
+
+```bash
+# 英文播客
+python -m podcast.gen_podcast run \
+    "https://en.wikipedia.org/wiki/Large_language_model"
+
+# 中文播客（指定中文语音）
+python -m podcast.gen_podcast run \
+    --role-tts-voices zh-CN-YunjianNeural \
+    --role-tts-voices zh-CN-XiaoxiaoNeural \
+    --language zh \
+    --category 1 \
+    "https://en.wikipedia.org/wiki/Large_language_model"
+
+# 多来源 + 发布到线上
+python -m podcast.gen_podcast run \
+    --role-tts-voices zh-CN-YunjianNeural \
+    --role-tts-voices zh-CN-XiaoxiaoNeural \
+    --language zh \
+    --category 1 \
+    --is-published \
+    "https://www.youtube.com/watch?v=aR6CzM0x-g0" \
+    "https://en.wikipedia.org/wiki/Large_language_model" \
+    "/path/to/paper.pdf"
+```
+
+`run` 参数说明：
+
+| 参数                | 默认值                                 | 说明                                                |
+| ------------------- | -------------------------------------- | --------------------------------------------------- |
+| `SOURCES`           | —                                      | 一个或多个来源（网页 URL / YouTube URL / PDF 路径） |
+| `--role-tts-voices` | `en-US-JennyNeural` `en-US-EricNeural` | Edge TTS 语音，可重复                               |
+| `--language`        | `en`                                   | 对话语言（`zh` / `en` / `ja` / `ko` 等）            |
+| `--save-dir`        | `./audios/podcast`                     | 音频输出目录                                        |
+| `--category`        | `0`                                    | 分类（0=未知 1=科技 2=教育 3=美食 4=旅行 5=代码 …） |
+| `--is-published`    | `False`                                | 设置后写入 D1 时标记为已发布，并打印访问链接        |
+
+---
+
+### 仅生成音频（不入库）
+
+```bash
+# 单条来源 → 生成 mp3 + vtt
+python -m podcast.content_parser_tts instruct-content-tts \
+    "https://en.wikipedia.org/wiki/Large_language_model"
+
+# 中文
+python -m podcast.content_parser_tts instruct-content-tts \
+    --role-tts-voices zh-CN-YunjianNeural \
+    --role-tts-voices zh-CN-XiaoxiaoNeural \
+    --language zh \
+    "https://en.wikipedia.org/wiki/Large_language_model"
+
+# 手动合并分段音频
+python -m podcast.content_parser_tts merge-audio-files \
+    audios/podcast/Large_language_model/0  audios/podcast/LLM.mp3
+```
+
+---
+
+### 手动入库
+
+```bash
+# 上传音频 + 生成封面 + 写入 D1
+python -m podcast.insert_podcast insert-podcast-to-d1 \
+    ./audios/podcast/LLM.mp3 \
+    "大型语言模型" \
+    "weedge" \
+    "zh-CN-YunjianNeural,zh-CN-XiaoxiaoNeural" \
+    --language zh \
+    --category 1 \
+    --is-published
+
+# 更新封面
+python -m podcast.insert_podcast update-podcast-cover-to-d1 \
+    <pid> "https://example.com/cover.png"
+```
+
+---
+
+## Edge TTS 推荐语音
+
+### 中文 `--language zh`
+
+| 语音 ID                | 性别 | 风格             |
+| ---------------------- | ---- | ---------------- |
+| `zh-CN-YunjianNeural`  | 男   | 播音风格         |
+| `zh-CN-YunxiNeural`    | 男   | 叙述风格         |
+| `zh-CN-YunyangNeural`  | 男   | 新闻风格         |
+| `zh-CN-XiaoxiaoNeural` | 女   | 自然亲切（推荐） |
+| `zh-CN-XiaoyiNeural`   | 女   | 温柔甜美         |
+
+### 英文 `--language en`（默认）
+
+| 语音 ID             | 性别 |
+| ------------------- | ---- |
+| `en-US-EricNeural`  | 男   |
+| `en-US-JennyNeural` | 女   |
+
+> **注意**：`--language zh` 时若未指定中文语音，工具会自动替换并打印提示。
+
+---
+
+## 支持的 Gemini 模型
+
+| 模型 ID                         | 说明                           |
+| ------------------------------- | ------------------------------ |
+| `gemini-3-flash-preview`        | 默认，Gemini 3 Flash（速度快） |
+| `gemini-3.1-flash-lite-preview` | Gemini 3.1 轻量版              |
+| `gemini-2.5-flash`              | 稳定版，适合生产               |
+| `gemini-2.5-pro`                | 最强推理，成本较高             |
+
+> **注意**：不存在 `gemini-3.1-flash-preview`，设置后会报 404。
+
+---
+
+## 核心流程
+
+```
+来源（URL / PDF）
+       │
+       ▼
+ContentExtractor          ← 网页 / YouTube / PDF
+       │
+       ▼
+Gemini LLM (instructor)   ← 流式生成多角色对话 Podcast 结构
+       │
+       ▼
+Edge TTS (逐角色合成)      ← 自动清理 Markdown/SSML，指数退避重试
+       │
+       ▼
+pydub 合并 mp3
+       │
+       ├─── SiliconFlow 生成封面（翻译标题 → 生成 → 压缩）
+       │
+       ▼
+Cloudflare R2 上传（音频 + 封面）
+       │
+       ▼
+Cloudflare D1 写入元数据
+```
+
+---
+
+## 常见问题
+
+| 错误                           | 原因                                     | 解决方案                                                     |
+| ------------------------------ | ---------------------------------------- | ------------------------------------------------------------ |
+| `503 UNAVAILABLE`              | Gemini 服务高峰期过载                    | 设置 `GEMINI_FALLBACK_MODEL=gemini-2.5-flash`，自动重试降级  |
+| `404 not found`                | 模型 ID 错误                             | 检查 `GEMINI_MODEL`，不要用 `gemini-3.1-flash-preview`       |
+| `NoAudioReceived`              | 文本含特殊字符或 Edge 服务异常           | 工具会自动清理并多轮重试，全部失败时跳过该段继续             |
+| `ModuleNotFoundError: jsonref` | 缺少依赖                                 | `pip install jsonref` 或 `pip install -e .`                  |
+| 中文播客开头/结尾是英文        | 使用了英文默认语音或未传 `--language zh` | 加 `--language zh --role-tts-voices zh-CN-YunjianNeural ...` |
