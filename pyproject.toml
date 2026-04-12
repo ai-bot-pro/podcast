@@ -8,7 +8,7 @@ include = ["podcast*"]
 
 [project]
 name = "gen-podcast"
-version = "0.1.1"
+version = "0.1.2"
 authors = [{ name = "weedge", email = "weege007@gmail.com" }]
 description = "AI-powered podcast generation: extract content, generate scripts via LLM, synthesize speech"
 readme = "README.md"
@@ -59,3 +59,8 @@ dependencies = [
 
 [project.scripts]
 gen-podcast = "podcast.gen_podcast:app"
+gen-podcasts-xml = "podcast.gen_podcasts_xml:app"
+content-parser-tts = "podcast.content_parser_tts:app"
+insert-podcast = "podcast.insert_podcast:app"
+siliconflow-api = "podcast.siliconflow_api:app"
+content-extractor = "podcast.content_parser.content_extractor_instructor:app"

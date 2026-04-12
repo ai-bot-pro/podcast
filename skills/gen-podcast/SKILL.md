@@ -70,6 +70,9 @@ pydub 合并 MP3 + WebVTT 字幕
       ├── SiliconFlow 生成封面
       ▼
 Cloudflare R2 上传 + D1 写入元数据
+      │（可选）
+      ▼
+gen_podcasts_xml     ← 从 D1 查询已发布播客 → 生成 RSS XML → 上传 R2
 ```
 
 ## 使用方式
@@ -105,11 +108,11 @@ gen-podcast run \
 ### 方式二：仅生成音频（不入库）
 
 ```bash
-python -m podcast.content_parser_tts instruct-content-tts \
+content-parser-tts instruct-content-tts \
     "https://en.wikipedia.org/wiki/Large_language_model"
 
 # 中文
-python -m podcast.content_parser_tts instruct-content-tts \
+content-parser-tts instruct-content-tts \
     --role-tts-voices zh-CN-YunjianNeural \
     --role-tts-voices zh-CN-XiaoxiaoNeural \
     --language zh \
@@ -119,8 +122,18 @@ python -m podcast.content_parser_tts instruct-content-tts \
 ### 方式三：合并已有分段音频
 
 ```bash
-python -m podcast.content_parser_tts merge-audio-files \
+content-parser-tts merge-audio-files \
     audios/podcast/Large_language_model/0  audios/podcast/LLM.mp3
+```
+
+### 方式四：生成 RSS 订阅源
+
+```bash
+# 从 D1 播客数据生成 rss.xml（Apple Podcasts 兼容格式）
+gen-podcasts-xml gen_xml_from_d1_podcast
+
+# 生成并上传到 Cloudflare R2
+gen-podcasts-xml gen_xml_from_d1_podcast --is-upload
 ```
 
 ## 参数说明
@@ -181,10 +194,12 @@ python -m podcast.content_parser_tts merge-audio-files \
 
 | 命令 | 说明 |
 |------|------|
-| `python -m podcast.content_parser.content_extractor_instructor extract-content <URL>` | 仅提取内容预览 |
+| `content-extractor extract-content <URL>` | 仅提取内容预览 |
 | `gen-podcast get-source-type <URL>` | 判断来源类型 |
-| `python -m podcast.insert_podcast insert-podcast-to-d1 ...` | 手动入库 |
-| `python -m podcast.siliconflow_api gen-image <prompt>` | 手动生成封面 |
+| `insert-podcast insert-podcast-to-d1 ...` | 手动入库 |
+| `siliconflow-api gen-image <prompt>` | 手动生成封面 |
+| `gen-podcasts-xml gen_xml_from_d1_podcast` | 从 D1 生成 RSS XML |
+| `gen-podcasts-xml gen_xml_from_d1_podcast --is-upload` | 生成 RSS XML 并上传至 R2 |
 
 ## 在 Agent 中使用
 
@@ -194,7 +209,7 @@ Agent 执行此技能时，遵循以下步骤：
 2. **确定来源**：从用户请求中提取 URL 或 PDF 路径
 3. **选择语言和语音**：根据用户需求选择 `--language` 和 `--role-tts-voices`
 4. **执行生成**：
-   - 仅需音频 → `python -m podcast.content_parser_tts instruct-content-tts`
+   - 仅需音频 → `content-parser-tts instruct-content-tts`
    - 需要入库发布 → `gen-podcast run`
 5. **返回结果**：告知用户生成的音频文件路径，或在线播客链接（若已发布到 https://podcast-997.pages.dev/）
 

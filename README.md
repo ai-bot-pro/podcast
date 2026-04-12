@@ -27,6 +27,7 @@ An AI-powered podcast generation tool: automatically extract text from any sourc
 | **Speech Synthesis**   | Microsoft Edge TTS, supports Chinese/English/Japanese/Korean and more, with exponential backoff retry |
 | **Cover Art**          | SiliconFlow AI image generation, auto-compressed and uploaded to Cloudflare R2                        |
 | **Storage / Database** | Cloudflare R2 (audio/images) + Cloudflare D1 (metadata)                                               |
+| **RSS Feed**           | Generate Apple Podcasts-compatible RSS XML from D1, optionally upload to R2                            |
 
 ---
 
@@ -38,6 +39,7 @@ podcast/
 ├── .env.example
 ├── podcast/
 │   ├── gen_podcast.py              # End-to-end CLI entry point
+│   ├── gen_podcasts_xml.py         # Generate RSS feed XML from D1
 │   ├── content_parser_tts.py       # Content extraction + TTS
 │   ├── insert_podcast.py           # R2 upload + D1 insert
 │   ├── audio_length.py
@@ -149,19 +151,35 @@ make gen-podcast ARGS="--language zh https://en.wikipedia.org/wiki/Large_languag
 
 ```bash
 # Single source → generate mp3 + vtt
-python -m podcast.content_parser_tts instruct-content-tts \
+content-parser-tts instruct-content-tts \
     "https://en.wikipedia.org/wiki/Large_language_model"
 
 # Chinese
-python -m podcast.content_parser_tts instruct-content-tts \
+content-parser-tts instruct-content-tts \
     --role-tts-voices zh-CN-YunjianNeural \
     --role-tts-voices zh-CN-XiaoxiaoNeural \
     --language zh \
     "https://en.wikipedia.org/wiki/Large_language_model"
 
 # Manually merge segmented audio
-python -m podcast.content_parser_tts merge-audio-files \
+content-parser-tts merge-audio-files \
     audios/podcast/Large_language_model/0  audios/podcast/LLM.mp3
+```
+
+---
+
+### Generate RSS Feed
+
+```bash
+# Generate rss.xml locally from D1 podcast data
+gen-podcasts-xml gen_xml_from_d1_podcast
+
+# Generate and upload to Cloudflare R2
+gen-podcasts-xml gen_xml_from_d1_podcast --is-upload
+
+# Or use make
+make gen-rss          # generate only
+make gen-rss-upload   # generate + upload to R2
 ```
 
 ---
@@ -170,7 +188,7 @@ python -m podcast.content_parser_tts merge-audio-files \
 
 ```bash
 # Upload audio + generate cover + write to D1
-python -m podcast.insert_podcast insert-podcast-to-d1 \
+insert-podcast insert-podcast-to-d1 \
     ./audios/podcast/LLM.mp3 \
     "Large Language Model" \
     "weedge" \
@@ -180,7 +198,7 @@ python -m podcast.insert_podcast insert-podcast-to-d1 \
     --is-published
 
 # Update cover art
-python -m podcast.insert_podcast update-podcast-cover-to-d1 \
+insert-podcast update-podcast-cover-to-d1 \
     <pid> "https://example.com/cover.png"
 ```
 
@@ -256,6 +274,8 @@ Cloudflare D1 metadata insert
 make help            # Show all available commands
 make install         # Install the package in editable mode
 make gen-podcast     # Run gen-podcast CLI (pass ARGS="..." for extra arguments)
+make gen-rss         # Generate RSS feed XML from D1 podcast data
+make gen-rss-upload  # Generate RSS feed XML and upload to Cloudflare R2
 make build           # Build source and wheel distributions
 make dist-local      # Install the built wheel locally
 make publish-test    # Publish package to TestPyPI

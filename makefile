@@ -1,4 +1,4 @@
-.PHONY: install run build clean dist-local publish-test publish help
+.PHONY: install run build clean dist-local publish-test publish gen-rss gen-rss-upload help
 
 PYTHON ?= python3
 PIP ?= pip
@@ -19,6 +19,12 @@ build: clean ## Build source and wheel distributions
 
 gen-podcast: ## Run gen-podcast CLI run command(pass ARGS="..." for extra arguments)
 	gen-podcast run $(ARGS)
+
+gen-rss: ## Generate RSS feed XML from D1 podcast data
+	gen-podcasts-xml gen_xml_from_d1_podcast
+
+gen-rss-upload: ## Generate RSS feed XML and upload to Cloudflare R2
+	gen-podcasts-xml gen_xml_from_d1_podcast --is-upload
 
 dist-local: build ## Install the built wheel locally
 	$(PIP) install dist/*.whl --force-reinstall
