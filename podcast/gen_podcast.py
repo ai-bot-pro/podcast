@@ -54,6 +54,7 @@ def get_source_type(source: str):
 
 @app.command("run")
 def run(
+    ctx: typer.Context,
     sources: List[str],
     role_tts_voices: List[str] = ["en-US-JennyNeural", "en-US-EricNeural"],
     language: str = "en",
@@ -61,6 +62,9 @@ def run(
     category: int = 0,
     is_published: bool = False,
 ):
+    cmd = (ctx.command.name or "").replace("_", "-")
+    sources = [s for s in sources if s.replace("_", "-") != cmd]
+
     data_list = instruct_content_tts(
         sources,
         role_tts_voices=role_tts_voices,

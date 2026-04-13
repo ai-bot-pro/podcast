@@ -26,9 +26,13 @@ class YouTubeTranscriber:
 
 @app.command()
 def extract_content(
+    ctx: typer.Context,
     urls: List[str],
     output_dir: str = "videos/transcripts/",
 ) -> None:
+    cmd = (ctx.command.name or "").replace("_", "-")
+    urls = [u for u in urls if u.replace("_", "-") != cmd]
+
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -52,7 +56,14 @@ def extract_content(
 
 
 @app.command()
-def instruct_content(youtube_urls: List[str], language: str = "en") -> None:
+def instruct_content(
+    ctx: typer.Context,
+    youtube_urls: List[str],
+    language: str = "en",
+) -> None:
+    cmd = (ctx.command.name or "").replace("_", "-")
+    youtube_urls = [u for u in youtube_urls if u.replace("_", "-") != cmd]
+
     console = Console()
     extractor = YouTubeTranscriber()
     for url in youtube_urls:

@@ -2,7 +2,10 @@ import re
 import logging
 import os
 import unicodedata
+import urllib.request
 from typing import List
+from urllib.error import URLError
+from urllib.parse import urlparse
 
 import typer
 import pymupdf
@@ -12,6 +15,14 @@ from .table import table
 
 
 app = typer.Typer()
+
+_USER_AGENT = "gen-podcast/0.1 (arxiv PDF text extraction; +https://github.com)"
+
+
+def _fetch_pdf_bytes(url: str, timeout: float = 120.0) -> bytes:
+    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read()
 
 
 def _configure_pymupdf_for_text_extraction() -> None:
@@ -30,20 +41,32 @@ class PDFExtractor:
     def extract_content(self, file_path: str) -> str:
         try:
             _configure_pymupdf_for_text_extraction()
-            doc = pymupdf.open(file_path)
-            content = " ".join(page.get_text() for page in doc)
-            doc.close()
-
-            # Normalize the text to handle special characters and remove accents
-            normalized_content = unicodedata.normalize("NFKD", content)
-
-            return normalized_content
+            if file_path.startswith(("http://", "https://")):
+                try:
+                    data = _fetch_pdf_bytes(file_path)
+                except URLError as e:
+                    logging.error(f"Failed to download PDF from {file_path}: {e}")
+                    raise
+                doc = pymupdf.open(stream=data, filetype="pdf")
+            else:
+                doc = pymupdf.open(file_path)
+            try:
+                content = " ".join(page.get_text() for page in doc)
+                normalized_content = unicodedata.normalize("NFKD", content)
+                return normalized_content
+            finally:
+                doc.close()
         except Exception as e:
             logging.error(f"Error extracting PDF content: {str(e)}")
             raise
 
 
 def get_pdf_file_name(file: str):
+    if file.startswith(("http://", "https://")):
+        tail = urlparse(file).path.rstrip("/").split("/")[-1] or "document"
+        if not tail.lower().endswith(".pdf"):
+            tail = f"{tail}.pdf"
+        return tail
     pattern = r"([^/]+\.pdf)$"
     match = re.search(pattern, file)
     if match:
@@ -55,9 +78,13 @@ def get_pdf_file_name(file: str):
 
 @app.command()
 def extract_content(
+    ctx: typer.Context,
     pdf_files: List[str],
     output_dir: str = "videos/transcripts/",
 ) -> None:
+    cmd = (ctx.command.name or "").replace("_", "-")
+    pdf_files = [p for p in pdf_files if p.replace("_", "-") != cmd]
+
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -77,7 +104,14 @@ def extract_content(
 
 
 @app.command()
-def instruct_content(test_urls: List[str], language: str = "en") -> None:
+def instruct_content(
+    ctx: typer.Context,
+    test_urls: List[str],
+    language: str = "en",
+) -> None:
+    cmd = (ctx.command.name or "").replace("_", "-")
+    test_urls = [u for u in test_urls if u.replace("_", "-") != cmd]
+
     console = Console()
     extractor = PDFExtractor()
     for url in test_urls:

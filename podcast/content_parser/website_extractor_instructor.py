@@ -104,7 +104,10 @@ class WebsiteExtractor:
 
 
 @app.command()
-def extract_content(test_urls: List[str]) -> None:
+def extract_content(ctx: typer.Context, test_urls: List[str]) -> None:
+    cmd = (ctx.command.name or "").replace("_", "-")
+    test_urls = [u for u in test_urls if u.replace("_", "-") != cmd]
+
     extractor = WebsiteExtractor()
     for url in test_urls:
         try:
@@ -120,10 +123,14 @@ def extract_content(test_urls: List[str]) -> None:
 
 @app.command()
 def instruct_content(
+    ctx: typer.Context,
     test_urls: List[str],
     language: str = "en",
     mode="text",
 ) -> None:
+    cmd = (ctx.command.name or "").replace("_", "-")
+    test_urls = [u for u in test_urls if u.replace("_", "-") != cmd]
+
     console = Console()
     extractor = WebsiteExtractor()
     for url in test_urls:

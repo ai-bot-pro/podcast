@@ -89,3 +89,6 @@ pypi_build/
 
 exp/
 .qoder/
+
+release.md
+uv.lock

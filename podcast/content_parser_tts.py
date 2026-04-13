@@ -380,7 +380,6 @@ def instruct_podcast_tts(
     return asyncio.run(gen_podcast_tts_audios(data_models, tmp_dir, role_tts_voices))
 
 
-@app.command()
 def instruct_content_tts(
     sources: List[str],
     role_tts_voices: List[str] = ["en-US-JennyNeural", "en-US-EricNeural"],
@@ -408,6 +407,24 @@ def instruct_content_tts(
             logging.error(f"An error occurred while processing {source}: {str(e)}", exc_info=True)
 
     return res
+
+
+@app.command("instruct-content-tts")
+def instruct_content_tts_cli(
+    ctx: typer.Context,
+    sources: List[str],
+    role_tts_voices: List[str] = ["en-US-JennyNeural", "en-US-EricNeural"],
+    language: str = "en",
+    save_dir: str = "./audios/podcast",
+) -> list:
+    cmd = (ctx.command.name or "").replace("_", "-")
+    sources = [s for s in sources if s.replace("_", "-") != cmd]
+    return instruct_content_tts(
+        sources,
+        role_tts_voices=role_tts_voices,
+        language=language,
+        save_dir=save_dir,
+    )
 
 
 r"""
