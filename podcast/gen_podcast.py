@@ -64,7 +64,7 @@ def run(
     category: int = 0,
     is_published: bool = False,
     subtitles: bool = typer.Option(
-        False, "--subtitles/--no-subtitles", help="生成 Gemini 逐字字幕并上传 R2/写入 D1"
+        False, "--subtitles/--no-subtitles", help="生成 Gemini 逐字字幕并上传 R2/写入 D1（默认关闭，加 --subtitles 启用）"
     ),
     subtitle_model: str = typer.Option(
         "", help="覆盖 GEMINI_SUBTITLE_MODEL"

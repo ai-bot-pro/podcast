@@ -148,7 +148,7 @@ make gen-podcast ARGS="--language zh https://en.wikipedia.org/wiki/Large_languag
 | `--save-dir`        | `./audios/podcast`                     | Audio output directory                                           |
 | `--category`        | `0`                                    | Category (0=unknown 1=tech 2=education 3=food 4=travel 5=code …) |
 | `--is-published`    | `False`                                | When set, marks as published in D1 and prints the public URL     |
-| `--subtitles` / `--no-subtitles` | `True`                     | Generate word-level subtitles via Gemini, upload to R2 and save URLs to D1 |
+| `--subtitles` / `--no-subtitles` | `False`                    | When enabled, generate word-level subtitles via Gemini, upload to R2 and save URLs to D1 (opt-in) |
 | `--subtitle-model`  | `""`                                   | Override `GEMINI_SUBTITLE_MODEL` for the subtitle pass only      |
 
 ---
@@ -240,7 +240,7 @@ make subtitle-gen AUDIO=audios/podcast/LLM.mp3 LANG=zh
 make subtitle-gen AUDIO=audios/podcast/LLM.mp3 LANG=zh ARGS="--output-dir /tmp/subs"
 ```
 
-When used through `gen-podcast run` (default), the generated subtitle files are uploaded to R2 automatically and the URLs are stored in D1 columns `subtitle_json_url` / `subtitle_vtt_url` / `subtitle_lrc_url` / `subtitle_srt_url`. Existing D1 databases need this one-time migration:
+When used through `gen-podcast run`, subtitle generation is **opt-in**: pass `--subtitles` to generate, upload them to R2 automatically, and store the URLs in D1 columns `subtitle_json_url` / `subtitle_vtt_url` / `subtitle_lrc_url` / `subtitle_srt_url`. Before enabling, existing D1 databases need this one-time migration:
 
 ```sql
 ALTER TABLE podcast ADD COLUMN subtitle_json_url text DEFAULT "";
@@ -306,7 +306,7 @@ pydub merge mp3
        │
        ├─── SiliconFlow cover art (translate title → generate → compress)
        │
-       ├─── Gemini audio → word-level subtitles (json / vtt / lrc / srt)
+       ├─── Gemini audio → word-level subtitles (json / vtt / lrc / srt) [opt-in via --subtitles]
        │
        ▼
 Cloudflare R2 upload (audio + cover + subtitles)

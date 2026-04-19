@@ -148,7 +148,7 @@ make gen-podcast ARGS="--language zh https://en.wikipedia.org/wiki/Large_languag
 | `--save-dir`        | `./audios/podcast`                     | 音频输出目录                                        |
 | `--category`        | `0`                                    | 分类（0=未知 1=科技 2=教育 3=美食 4=旅行 5=代码 …） |
 | `--is-published`    | `False`                                | 设置后写入 D1 时标记为已发布，并打印访问链接        |
-| `--subtitles` / `--no-subtitles` | `True`                    | 通过 Gemini 生成逐字字幕，上传 R2 并写入 D1         |
+| `--subtitles` / `--no-subtitles` | `False`                   | 启用时通过 Gemini 生成逐字字幕，上传 R2 并写入 D1（默认关闭，按需加 `--subtitles`） |
 | `--subtitle-model`  | `""`                                   | 仅字幕阶段覆盖 `GEMINI_SUBTITLE_MODEL`              |
 
 ---
@@ -240,7 +240,7 @@ make subtitle-gen AUDIO=audios/podcast/LLM.mp3 LANG=zh
 make subtitle-gen AUDIO=audios/podcast/LLM.mp3 LANG=zh ARGS="--output-dir /tmp/subs"
 ```
 
-`gen-podcast run` 默认启用字幕：生成的 4 份文件自动上传 R2，URL 写入 D1 的 `subtitle_json_url` / `subtitle_vtt_url` / `subtitle_lrc_url` / `subtitle_srt_url` 列。已有 D1 库需一次性迁移：
+`gen-podcast run` 默认**不启用**字幕：需要时显式加 `--subtitles`，生成的 4 份文件会自动上传 R2，URL 写入 D1 的 `subtitle_json_url` / `subtitle_vtt_url` / `subtitle_lrc_url` / `subtitle_srt_url` 列。启用前，已有 D1 库需一次性迁移：
 
 ```sql
 ALTER TABLE podcast ADD COLUMN subtitle_json_url text DEFAULT "";
@@ -306,7 +306,7 @@ pydub 合并 mp3
        │
        ├─── SiliconFlow 生成封面（翻译标题 → 生成 → 压缩）
        │
-       ├─── Gemini 音频 → 逐字字幕（json / vtt / lrc / srt）
+       ├─── Gemini 音频 → 逐字字幕（json / vtt / lrc / srt）[需 --subtitles 启用]
        │
        ▼
 Cloudflare R2 上传（音频 + 封面 + 字幕）

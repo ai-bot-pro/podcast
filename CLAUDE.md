@@ -56,7 +56,7 @@ gen-podcast run <SOURCE>
   → Edge TTS per role → MP3 + VTT files
   → pydub merge → final audio
   → SiliconFlow AI → cover image
-  → Gemini audio → word-level subtitles (json/vtt/lrc/srt)  [--no-subtitles to skip]
+  → Gemini audio → word-level subtitles (json/vtt/lrc/srt)  [opt-in via --subtitles]
   → Cloudflare R2 upload (audio + cover + subtitles)
   → Cloudflare D1 insert
 ```
