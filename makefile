@@ -1,4 +1,4 @@
-.PHONY: install run build clean dist-local publish-test publish gen-rss gen-rss-upload help
+.PHONY: install run build clean dist-local publish-test publish gen-rss gen-rss-upload subtitle-gen help
 
 PYTHON ?= python3
 PIP ?= pip
@@ -25,6 +25,10 @@ gen-rss: ## Generate RSS feed XML from D1 podcast data
 
 gen-rss-upload: ## Generate RSS feed XML and upload to Cloudflare R2
 	gen-podcasts-xml gen_xml_from_d1_podcast --is-upload
+
+subtitle-gen: ## Generate word-level subtitles for an AUDIO file via Gemini (AUDIO=path [LANG=zh] [ARGS="..."])
+	@if [ -z "$(AUDIO)" ]; then echo "usage: make subtitle-gen AUDIO=path/to.mp3 [LANG=zh] [ARGS=\"--output-dir /tmp/subs\"]"; exit 2; fi
+	subtitle-gen generate "$(AUDIO)" --language $(or $(LANG),en) $(ARGS)
 
 dist-local: build ## Install the built wheel locally
 	$(PIP) install dist/*.whl --force-reinstall

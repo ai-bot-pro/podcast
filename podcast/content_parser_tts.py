@@ -276,6 +276,8 @@ async def gen_podcast_tts_audios(
     pre_cn, cur_cn = (0, 0)
     title = ""
     description = ""
+    extraction = None
+    p_save_dir = os.path.join(save_dir, str(podcast_index))
     for extraction in data_models:
         if title == "" and extraction.description:
             title = extraction.title
@@ -327,8 +329,36 @@ async def gen_podcast_tts_audios(
             role_index += 1
             await edge_tts_conversion(role.content, output_file, voice)
 
+    # 流结束后兜底：最后一条 role 的 content 补录 / 覆盖。
+    # `duplicate` 覆盖逻辑依赖"下一条 role 的出现"来重做上一条；流末端不存在"下一条"，
+    # 于是上一轮 yield 中若最后一条 content 尚未完整就可能留下截断音频（或被 _coerce_role
+    # 判空跳过），需要在这里显式重做。
+    if extraction is not None and extraction.roles:
+        last_role = _coerce_role(extraction.roles[-1])
+        if last_role is not None:
+            if not os.path.exists(p_save_dir):
+                os.makedirs(p_save_dir)
+            write_idx = role_index - 1 if pre_role == last_role.name else role_index
+            prev_audio = os.path.join(p_save_dir, f"{write_idx}_{last_role.name}.mp3")
+            prev_vtt = os.path.join(p_save_dir, f"{write_idx}_{last_role.name}.vtt")
+            existed = os.path.isfile(prev_audio)
+            for f in (prev_audio, prev_vtt):
+                if os.path.isfile(f):
+                    try:
+                        os.remove(f)
+                    except OSError:
+                        pass
+            voice = role_tts_voices[write_idx % len(role_tts_voices)]
+            tag = "final-fix" if existed else "final-append"
+            print(f"[{tag}] {write_idx}. {last_role.name}: {last_role.content} speaker:{voice}\n")
+            await edge_tts_conversion(last_role.content, prev_audio, voice)
+            pre_role = last_role.name
+            if not existed:
+                role_index += 1
+
     # print(extraction)
     return extraction
+
 
 
 @app.command("merge_audio_files")

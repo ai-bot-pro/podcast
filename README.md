@@ -26,7 +26,8 @@ An AI-powered podcast generation tool: automatically extract text from any sourc
 | **Script Generation**  | Gemini (`google-genai` + `instructor`) streams multi-role podcast dialogue                            |
 | **Speech Synthesis**   | Microsoft Edge TTS, supports Chinese/English/Japanese/Korean and more, with exponential backoff retry |
 | **Cover Art**          | SiliconFlow AI image generation, auto-compressed and uploaded to Cloudflare R2                        |
-| **Storage / Database** | Cloudflare R2 (audio/images) + Cloudflare D1 (metadata)                                               |
+| **Word-level Subtitles** | Gemini audio understanding produces per-token timing; writes JSON / WebVTT (karaoke `<time>` tags) / enhanced LRC / SRT |
+| **Storage / Database** | Cloudflare R2 (audio/images/subtitles) + Cloudflare D1 (metadata)                                     |
 | **RSS Feed**           | Generate Apple Podcasts-compatible RSS XML from D1, optionally upload to R2                            |
 
 ---
@@ -41,7 +42,9 @@ podcast/
 │   ├── gen_podcast.py              # End-to-end CLI entry point
 │   ├── gen_podcasts_xml.py         # Generate RSS feed XML from D1
 │   ├── content_parser_tts.py       # Content extraction + TTS
+│   ├── subtitle_generator.py       # Gemini audio → word-level subtitles
 │   ├── insert_podcast.py           # R2 upload + D1 insert
+│   ├── _llm_retry.py               # Shared Gemini transient-error retry helpers
 │   ├── audio_length.py
 │   ├── image_compression.py
 │   ├── siliconflow_api.py
@@ -88,6 +91,7 @@ cp .env.example .env
 | `GOOGLE_API_KEY`        | Google Gemini API key                                                 |
 | `GEMINI_MODEL`          | Model ID, default `gemini-3-flash-preview` (without `models/` prefix) |
 | `GEMINI_FALLBACK_MODEL` | Optional fallback model on 503 overload (e.g. `gemini-2.5-flash`)     |
+| `GEMINI_SUBTITLE_MODEL` | Audio-capable model for word-level subtitles, default `gemini-2.5-flash` |
 | `GEMINI_MAX_RETRIES`    | LLM retry count, default `6`                                          |
 | `GEMINI_RETRY_BASE_SEC` | Retry base delay in seconds (exponential backoff), default `2`        |
 | `ROUND_CN`              | Number of dialogue rounds (optional, random 20–50 if unset)           |
@@ -144,6 +148,8 @@ make gen-podcast ARGS="--language zh https://en.wikipedia.org/wiki/Large_languag
 | `--save-dir`        | `./audios/podcast`                     | Audio output directory                                           |
 | `--category`        | `0`                                    | Category (0=unknown 1=tech 2=education 3=food 4=travel 5=code …) |
 | `--is-published`    | `False`                                | When set, marks as published in D1 and prints the public URL     |
+| `--subtitles` / `--no-subtitles` | `True`                     | Generate word-level subtitles via Gemini, upload to R2 and save URLs to D1 |
+| `--subtitle-model`  | `""`                                   | Override `GEMINI_SUBTITLE_MODEL` for the subtitle pass only      |
 
 ---
 
@@ -200,6 +206,47 @@ insert-podcast insert-podcast-to-d1 \
 # Update cover art
 insert-podcast update-podcast-cover-to-d1 \
     <pid> "https://example.com/cover.png"
+
+# Backfill subtitle URLs for an existing podcast
+insert-podcast update-podcast-subtitles-to-d1 \
+    <pid> \
+    --subtitle-json-url https://.../foo.words.json \
+    --subtitle-vtt-url  https://.../foo.words.vtt \
+    --subtitle-lrc-url  https://.../foo.words.lrc \
+    --subtitle-srt-url  https://.../foo.srt
+```
+
+---
+
+### Word-Level Subtitles (Gemini Audio)
+
+Transcribe the final merged mp3 with Gemini and emit 4 subtitle artifacts next to the audio: `<stem>.words.json`, `<stem>.words.vtt` (WebVTT with inline `<00:00:00.500>` karaoke time tags), `<stem>.words.lrc` (enhanced LRC / A2 extension), `<stem>.srt`. CJK languages are tokenized as 2–5-character phrases; space-separated languages are tokenized per word.
+
+```bash
+# Standalone: generate subtitles for any mp3
+subtitle-gen generate audios/podcast/LLM.mp3 --language zh
+
+# With optional reference transcript (helps alignment)
+subtitle-gen generate audios/podcast/LLM.mp3 \
+    --language zh \
+    --script-file audios/podcast/LLM.txt \
+    --output-dir /tmp/subs
+
+# Pick specific formats only
+subtitle-gen generate audios/podcast/LLM.mp3 --formats json --formats vtt
+
+# Or via make (AUDIO=required, LANG defaults to en)
+make subtitle-gen AUDIO=audios/podcast/LLM.mp3 LANG=zh
+make subtitle-gen AUDIO=audios/podcast/LLM.mp3 LANG=zh ARGS="--output-dir /tmp/subs"
+```
+
+When used through `gen-podcast run` (default), the generated subtitle files are uploaded to R2 automatically and the URLs are stored in D1 columns `subtitle_json_url` / `subtitle_vtt_url` / `subtitle_lrc_url` / `subtitle_srt_url`. Existing D1 databases need this one-time migration:
+
+```sql
+ALTER TABLE podcast ADD COLUMN subtitle_json_url text DEFAULT "";
+ALTER TABLE podcast ADD COLUMN subtitle_vtt_url  text DEFAULT "";
+ALTER TABLE podcast ADD COLUMN subtitle_lrc_url  text DEFAULT "";
+ALTER TABLE podcast ADD COLUMN subtitle_srt_url  text DEFAULT "";
 ```
 
 ---
@@ -259,11 +306,13 @@ pydub merge mp3
        │
        ├─── SiliconFlow cover art (translate title → generate → compress)
        │
-       ▼
-Cloudflare R2 upload (audio + cover)
+       ├─── Gemini audio → word-level subtitles (json / vtt / lrc / srt)
        │
        ▼
-Cloudflare D1 metadata insert
+Cloudflare R2 upload (audio + cover + subtitles)
+       │
+       ▼
+Cloudflare D1 metadata insert (includes subtitle URLs)
 ```
 
 ---
@@ -276,6 +325,7 @@ make install         # Install the package in editable mode
 make gen-podcast     # Run gen-podcast CLI (pass ARGS="..." for extra arguments)
 make gen-rss         # Generate RSS feed XML from D1 podcast data
 make gen-rss-upload  # Generate RSS feed XML and upload to Cloudflare R2
+make subtitle-gen    # Word-level subtitles via Gemini (AUDIO=path [LANG=zh] [ARGS="..."])
 make build           # Build source and wheel distributions
 make dist-local      # Install the built wheel locally
 make publish-test    # Publish package to TestPyPI

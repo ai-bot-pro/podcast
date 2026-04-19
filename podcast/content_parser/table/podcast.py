@@ -2,22 +2,21 @@ import json
 import logging
 import os
 import random
-import time
-from typing import Any, Callable, Generator, List, Set
+from typing import Any, Callable, Generator, List
 
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 import instructor
 
 from .. import types
+from ..._llm_retry import (
+    is_transient_llm_error as _is_transient_llm_error,
+    invoke_with_transient_retry as _invoke_with_transient_retry,
+    stream_with_transient_retry as _stream_with_transient_retry,
+)
 
 # Load environment variables from .env file
 load_dotenv(override=True)
-
-try:
-    from google.genai import errors as genai_errors
-except ImportError:
-    genai_errors = None  # type: ignore[misc, assignment]
 
 
 def _primary_model() -> str:
@@ -39,83 +38,6 @@ def _make_client(model_id: str):
         mode=instructor.Mode.GENAI_STRUCTURED_OUTPUTS,
         api_key=os.environ["GOOGLE_API_KEY"],
     )
-
-
-def _is_transient_llm_error(e: BaseException) -> bool:
-    if genai_errors is not None and isinstance(e, genai_errors.APIError):
-        return e.code in (408, 429, 500, 502, 503, 504)
-    et = type(e).__name__
-    if et in ("ReadTimeout", "ConnectTimeout", "RemoteProtocolError", "ConnectError"):
-        return True
-    s = str(e).lower()
-    return any(
-        x in s
-        for x in (
-            "503",
-            "429",
-            "502",
-            "504",
-            "unavailable",
-            "resource exhausted",
-            "try again later",
-            "high demand",
-            "overloaded",
-            "deadline exceeded",
-        )
-    )
-
-
-def _gemini_retry_params() -> tuple[int, float]:
-    max_retries = int(os.getenv("GEMINI_MAX_RETRIES", "6"))
-    base = float(os.getenv("GEMINI_RETRY_BASE_SEC", "2"))
-    return max(1, max_retries), max(0.5, base)
-
-
-def _invoke_with_transient_retry(fn: Callable[[], Any]) -> Any:
-    max_retries, base = _gemini_retry_params()
-    for attempt in range(max_retries):
-        try:
-            return fn()
-        except Exception as e:
-            if not _is_transient_llm_error(e):
-                raise
-            if attempt >= max_retries - 1:
-                raise
-            delay = min(base * (2**attempt), 120.0)
-            logging.warning(
-                "Gemini 暂不可用: %s；%.1f 秒后重试 (%s/%s)",
-                e,
-                delay,
-                attempt + 1,
-                max_retries,
-            )
-            time.sleep(delay)
-
-
-def _stream_with_transient_retry(
-    stream_factory: Callable[[], Generator[Any, None, None]],
-) -> Generator[Any, None, None]:
-    max_retries, base = _gemini_retry_params()
-    attempt = 0
-    while attempt < max_retries:
-        try:
-            yield from stream_factory()
-            return
-        except Exception as e:
-            if not _is_transient_llm_error(e):
-                raise
-            attempt += 1
-            if attempt >= max_retries:
-                raise
-            delay = min(base * (2 ** (attempt - 1)), 120.0)
-            logging.warning(
-                "Gemini 暂不可用: %s；%.1f 秒后重试 (%s/%s)",
-                e,
-                delay,
-                attempt,
-                max_retries,
-            )
-            time.sleep(delay)
 
 
 def _stream_with_primary_then_fallback(
