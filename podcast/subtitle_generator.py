@@ -30,6 +30,11 @@ from pydantic import BaseModel, Field, ValidationError
 
 from .content_parser import types as lang_types
 from ._llm_retry import invoke_with_transient_retry
+from .gemini_config import (
+    gemini_api_key,
+    gemini_http_options,
+    subtitle_uses_inline_audio,
+)
 
 load_dotenv(override=True)
 
@@ -189,15 +194,24 @@ def generate_word_level_subtitles(
 
     from google import genai
 
-    api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError("GOOGLE_API_KEY / GEMINI_API_KEY not set")
-    client = genai.Client(api_key=api_key)
+    api_key = gemini_api_key()
+    http_opt = gemini_http_options()
+    client = (
+        genai.Client(api_key=api_key, http_options=http_opt)
+        if http_opt is not None
+        else genai.Client(api_key=api_key)
+    )
 
     model_id = model or _subtitle_model()
     csec = chunk_sec if chunk_sec is not None else _chunk_sec()
 
     chunks, tmp_dir = _chunk_audio(audio_path, csec)
+    inline_audio = subtitle_uses_inline_audio()
+    if inline_audio:
+        logging.info(
+            "subtitle: using inline audio (Files API upload skipped); "
+            "set GEMINI_SUBTITLE_INLINE_AUDIO=0 to force resumable upload"
+        )
     try:
         all_segments: list[SegmentTiming] = []
         total_duration = 0.0
@@ -209,6 +223,7 @@ def generate_word_level_subtitles(
             segments, ended_at = _transcribe_with_adaptive_split(
                 client, chunk_path, language, script_hint, model_id,
                 base_offset=offset_sec, max_sub_sec=max(csec, _MIN_CHUNK_SEC),
+                inline_audio=inline_audio,
             )
             all_segments.extend(segments)
             total_duration = max(total_duration, ended_at or (offset_sec + chunk_dur))
@@ -234,6 +249,7 @@ def _transcribe_with_adaptive_split(
     *,
     base_offset: float,
     max_sub_sec: int,
+    inline_audio: bool,
 ) -> tuple[list[SegmentTiming], float]:
     """Transcribe a single chunk; if MAX_TOKENS, split in half and recurse.
 
@@ -242,7 +258,9 @@ def _transcribe_with_adaptive_split(
     from pydub import AudioSegment
 
     try:
-        part = _transcribe_once(client, chunk_path, language, script_hint, model_id)
+        part = _transcribe_once(
+            client, chunk_path, language, script_hint, model_id, inline_audio=inline_audio
+        )
     except MaxTokensError as e:
         audio = AudioSegment.from_file(chunk_path)
         dur_sec = len(audio) / 1000.0
@@ -267,6 +285,7 @@ def _transcribe_with_adaptive_split(
                     client, sub_path, language, script_hint, model_id,
                     base_offset=base_offset + sub_off,
                     max_sub_sec=next_sub,
+                    inline_audio=inline_audio,
                 )
                 out_segments.extend(segs)
                 end_time = max(end_time, sub_end)
@@ -326,17 +345,25 @@ def _transcribe_once(
     language: str,
     script_hint: Optional[str],
     model_id: str,
+    *,
+    inline_audio: bool,
 ) -> WordLevelSubtitles:
-    """Upload one audio file to Gemini and return structured timing (single call)."""
+    """Send one audio file to Gemini and return structured timing (single call)."""
     from google.genai import types as genai_types
 
     prompt = _build_prompt(language, script_hint)
-    uploaded = invoke_with_transient_retry(lambda: _upload_and_wait(client, audio_path))
-    try:
+    mime = _mime_for(audio_path)
+
+    if inline_audio:
+        with open(audio_path, "rb") as f:
+            audio_bytes = f.read()
+        audio_part = genai_types.Part.from_bytes(data=audio_bytes, mime_type=mime)
+        contents: list = [audio_part, prompt]
+
         def _call():
             return client.models.generate_content(
                 model=model_id,
-                contents=[uploaded, prompt],
+                contents=contents,
                 config=genai_types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=WordLevelSubtitles,
@@ -346,11 +373,27 @@ def _transcribe_once(
             )
 
         response = invoke_with_transient_retry(_call)
-    finally:
+    else:
+        uploaded = invoke_with_transient_retry(lambda: _upload_and_wait(client, audio_path))
         try:
-            client.files.delete(name=uploaded.name)
-        except Exception as e:  # noqa: BLE001
-            logging.warning("Failed to delete Gemini file %s: %s", uploaded.name, e)
+            def _call():
+                return client.models.generate_content(
+                    model=model_id,
+                    contents=[uploaded, prompt],
+                    config=genai_types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=WordLevelSubtitles,
+                        temperature=0.1,
+                        max_output_tokens=_MAX_OUTPUT_TOKENS,
+                    ),
+                )
+
+            response = invoke_with_transient_retry(_call)
+        finally:
+            try:
+                client.files.delete(name=uploaded.name)
+            except Exception as e:  # noqa: BLE001
+                logging.warning("Failed to delete Gemini file %s: %s", uploaded.name, e)
 
     finish_reason = _finish_reason(response)
     parsed = getattr(response, "parsed", None)

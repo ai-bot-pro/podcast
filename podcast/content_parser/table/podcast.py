@@ -14,6 +14,7 @@ from ..._llm_retry import (
     invoke_with_transient_retry as _invoke_with_transient_retry,
     stream_with_transient_retry as _stream_with_transient_retry,
 )
+from ...gemini_config import gemini_api_key, gemini_http_options
 
 # Load environment variables from .env file
 load_dotenv(override=True)
@@ -33,11 +34,14 @@ def _fallback_model() -> str | None:
 
 def _make_client(model_id: str):
     # https://ai.google.dev/gemini-api/docs/models — model id 不要加 "models/" 前缀
-    return instructor.from_provider(
-        f"google/{model_id}",
-        mode=instructor.Mode.GENAI_STRUCTURED_OUTPUTS,
-        api_key=os.environ["GOOGLE_API_KEY"],
-    )
+    http_opt = gemini_http_options()
+    kwargs: dict = {
+        "mode": instructor.Mode.GENAI_STRUCTURED_OUTPUTS,
+        "api_key": gemini_api_key(),
+    }
+    if http_opt is not None:
+        kwargs["http_options"] = http_opt
+    return instructor.from_provider(f"google/{model_id}", **kwargs)
 
 
 def _stream_with_primary_then_fallback(
