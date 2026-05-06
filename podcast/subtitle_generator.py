@@ -45,7 +45,12 @@ SUPPORTED_FORMATS = ("json", "vtt", "lrc", "srt")
 _UPLOAD_POLL_INTERVAL = 1.5
 _UPLOAD_POLL_TIMEOUT = 120.0
 _MAX_OUTPUT_TOKENS = 65535
-_DEFAULT_CHUNK_SEC = 300  # 5 分钟：单次 Gemini 调用可覆盖的安全时长
+_DEFAULT_CHUNK_SEC = 180  # 3 分钟：CJK 短语切片在 65k output tokens 内安全
+_MIN_CHUNK_SEC = 30       # MAX_TOKENS 时自适应分段的下界
+
+
+class MaxTokensError(RuntimeError):
+    """Gemini 输出被 MAX_TOKENS 截断；上层应将该分片再切半重试。"""
 
 
 # ---------- Pydantic timing models --------------------------------------- #
@@ -171,9 +176,13 @@ def generate_word_level_subtitles(
 ) -> WordLevelSubtitles:
     """Send `audio_path` to Gemini and return word-level timing data.
 
-    For audio longer than `chunk_sec` (default 5 min, `SUBTITLE_CHUNK_SEC` env),
+    For audio longer than `chunk_sec` (default 3 min, `SUBTITLE_CHUNK_SEC` env),
     the audio is split into sequential chunks and each is transcribed separately;
     returned segments/words are re-offset by each chunk's start time.
+
+    If a chunk's response hits `MAX_TOKENS`, the chunk is recursively halved
+    (down to `_MIN_CHUNK_SEC`) and re-transcribed, so a single dense CJK segment
+    never kills the whole run.
     """
     if not os.path.isfile(audio_path):
         raise FileNotFoundError(audio_path)
@@ -197,17 +206,12 @@ def generate_word_level_subtitles(
                 "subtitle chunk %d/%d: %s (offset=%.1fs, dur=%.1fs)",
                 idx + 1, len(chunks), os.path.basename(chunk_path), offset_sec, chunk_dur,
             )
-            part = _transcribe_once(
+            segments, ended_at = _transcribe_with_adaptive_split(
                 client, chunk_path, language, script_hint, model_id,
+                base_offset=offset_sec, max_sub_sec=max(csec, _MIN_CHUNK_SEC),
             )
-            for seg in part.segments:
-                seg.start += offset_sec
-                seg.end += offset_sec
-                for w in seg.words:
-                    w.start += offset_sec
-                    w.end += offset_sec
-                all_segments.append(seg)
-            total_duration = max(total_duration, offset_sec + (part.duration or chunk_dur))
+            all_segments.extend(segments)
+            total_duration = max(total_duration, ended_at or (offset_sec + chunk_dur))
     finally:
         if tmp_dir and os.path.isdir(tmp_dir):
             shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -219,6 +223,73 @@ def generate_word_level_subtitles(
     )
     _sanitize(subs)
     return subs
+
+
+def _transcribe_with_adaptive_split(
+    client,
+    chunk_path: str,
+    language: str,
+    script_hint: Optional[str],
+    model_id: str,
+    *,
+    base_offset: float,
+    max_sub_sec: int,
+) -> tuple[list[SegmentTiming], float]:
+    """Transcribe a single chunk; if MAX_TOKENS, split in half and recurse.
+
+    Returns (offset-adjusted segments, end_time_in_full_audio).
+    """
+    from pydub import AudioSegment
+
+    try:
+        part = _transcribe_once(client, chunk_path, language, script_hint, model_id)
+    except MaxTokensError as e:
+        audio = AudioSegment.from_file(chunk_path)
+        dur_sec = len(audio) / 1000.0
+        next_sub = max(_MIN_CHUNK_SEC, int(dur_sec // 2))
+        if next_sub >= max_sub_sec or dur_sec <= _MIN_CHUNK_SEC:
+            # Already at / below the floor — no point splitting further.
+            logging.error(
+                "MAX_TOKENS at minimum chunk size (dur=%.1fs); dropping this slice: %s",
+                dur_sec, e,
+            )
+            return [], base_offset + dur_sec
+        logging.warning(
+            "MAX_TOKENS at %.1fs chunk; splitting into %ss pieces and retrying",
+            dur_sec, next_sub,
+        )
+        subchunks, sub_tmp_dir = _chunk_audio(chunk_path, next_sub)
+        try:
+            out_segments: list[SegmentTiming] = []
+            end_time = base_offset
+            for sub_path, sub_off, sub_dur in subchunks:
+                segs, sub_end = _transcribe_with_adaptive_split(
+                    client, sub_path, language, script_hint, model_id,
+                    base_offset=base_offset + sub_off,
+                    max_sub_sec=next_sub,
+                )
+                out_segments.extend(segs)
+                end_time = max(end_time, sub_end)
+            return out_segments, end_time
+        finally:
+            if sub_tmp_dir and os.path.isdir(sub_tmp_dir):
+                shutil.rmtree(sub_tmp_dir, ignore_errors=True)
+
+    # Success path: offset segments into full-audio timeline.
+    out: list[SegmentTiming] = []
+    end_time = base_offset
+    for seg in part.segments:
+        seg.start += base_offset
+        seg.end += base_offset
+        for w in seg.words:
+            w.start += base_offset
+            w.end += base_offset
+        out.append(seg)
+        end_time = max(end_time, seg.end)
+    # Trust part.duration for a more accurate ending if it came through.
+    if part.duration:
+        end_time = max(end_time, base_offset + part.duration)
+    return out, end_time
 
 
 def _chunk_audio(audio_path: str, chunk_sec: int) -> tuple[list[tuple[str, float, float]], Optional[str]]:
@@ -289,10 +360,8 @@ def _transcribe_once(
     # Fallback: raw JSON. If truncated by MAX_TOKENS we'll get broken JSON.
     raw = getattr(response, "text", "") or ""
     if finish_reason and "MAX_TOKENS" in finish_reason:
-        raise RuntimeError(
-            f"Gemini output truncated by MAX_TOKENS (chunk too long). "
-            f"Lower SUBTITLE_CHUNK_SEC (current={_chunk_sec()}s) or shorten the audio. "
-            f"text[:200]={raw[:200]!r}"
+        raise MaxTokensError(
+            f"Gemini output truncated by MAX_TOKENS (chunk too long). text[:200]={raw[:200]!r}"
         )
     try:
         payload = json.loads(raw)

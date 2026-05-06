@@ -41,7 +41,7 @@ pip install gen-podcast
 | `GEMINI_MAX_RETRIES` | 否 | LLM 重试次数，默认 `6` |
 | `GEMINI_RETRY_BASE_SEC` | 否 | 重试基础等待秒数（指数退避），默认 `2` |
 | `GEMINI_SUBTITLE_MODEL` | 否 | 逐字字幕用的音频模型，默认 `gemini-2.5-flash` |
-| `SUBTITLE_CHUNK_SEC` | 否 | 长音频切片秒数，默认 `300`（避免单次输出撞 `MAX_TOKENS`） |
+| `SUBTITLE_CHUNK_SEC` | 否 | 长音频切片秒数，默认 `180`（撞 `MAX_TOKENS` 会自适应对半切到 30s 为止） |
 | `ROUND_CN` | 否 | 播客对话轮数（默认随机 20–50） |
 
 仅在需要上传/入库时配置：
@@ -229,7 +229,7 @@ gen-podcasts-xml gen_xml_from_d1_podcast --is-upload
 | `NoAudioReceived` | 文本含特殊字符 | 工具自动清理重试，全部失败跳过该段 |
 | 中文播客出现英文 | 未指定中文语音 | 加 `--language zh --role-tts-voices zh-CN-...` |
 | `ModuleNotFoundError: jsonref` | 缺少依赖 | `pip install gen-podcast` |
-| `Gemini returned non-JSON subtitle payload` / `MAX_TOKENS` | 字幕输出被截断（单次音频过长） | 降低 `SUBTITLE_CHUNK_SEC`（或 `--chunk-sec`）到 180 甚至更低 |
+| `Gemini returned non-JSON subtitle payload` / `MAX_TOKENS` | 字幕输出被截断（单次音频过长） | v0.1.3+ 会自动对半重试，若仍持续报错可显式 `--chunk-sec 120` 或 60 |
 | 最后一条对话丢失 | v0.1.2 流式末尾 bug | 升级到 v0.1.3+（已修复） |
 | D1 插入失败 `no such column: subtitle_json_url` | 旧库未迁移 | 对已有 D1 跑 4 条 `ALTER TABLE podcast ADD COLUMN subtitle_*_url text DEFAULT "";` |
 

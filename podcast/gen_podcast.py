@@ -6,7 +6,8 @@ from urllib.parse import urlparse
 
 import typer
 
-from .aws.upload import r2_upload
+from .aws.upload import r2_upload, has_r2_env
+from .cloudflare.rest_api import has_d1_env
 from .content_parser.table import podcast
 from .content_parser_tts import instruct_content_tts
 from .insert_podcast import insert_podcast_to_d1
@@ -79,6 +80,13 @@ def run(
         language=language,
         save_dir=save_dir,
     )
+    d1_ok = has_d1_env() and bool(os.getenv("PODCAST_D1_DB_ID"))
+    if not d1_ok:
+        logging.warning(
+            "Cloudflare D1 not configured (need PODCAST_D1_DB_ID + CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_KEY); "
+            "database insert will be skipped — audio files remain under %s",
+            save_dir,
+        )
     for data in data_list:
         print(data)
         source = data[0]
@@ -105,6 +113,13 @@ def run(
                     e,
                     exc_info=True,
                 )
+
+        if not d1_ok:
+            # 没有 D1 配置直接跳过入库，避免每次重试都触发一次 skip 日志
+            logging.info(
+                "skipping D1 insert for %s (Cloudflare D1 not configured)", audio_output_file
+            )
+            continue
 
         retries = 0
         max_retries = 3
@@ -147,7 +162,8 @@ def _gen_and_upload_subtitles(
     """Transcribe audio via Gemini, write 4 subtitle files next to it, upload each to R2.
 
     Returns {"json": url, "vtt": url, "lrc": url, "srt": url}. An empty string is
-    left for any format whose upload failed; the mp3 insert flow should still proceed.
+    left for any format whose upload failed or was skipped (R2 not configured);
+    the mp3 insert flow should still proceed. Local files remain on disk regardless.
     """
     subs = sg.generate_word_level_subtitles(
         audio_path,
@@ -156,7 +172,13 @@ def _gen_and_upload_subtitles(
         model=model,
     )
     local_paths = sg.write_all(subs, audio_path=audio_path)
-    urls: dict[str, str] = {}
+    urls: dict[str, str] = {fmt: "" for fmt in local_paths}
+    if not has_r2_env():
+        logging.warning(
+            "Cloudflare R2 not configured; subtitle files remain local only: %s",
+            ", ".join(local_paths.values()),
+        )
+        return urls
     for fmt, path in local_paths.items():
         try:
             urls[fmt] = r2_upload("podcast", path)

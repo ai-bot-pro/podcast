@@ -21,7 +21,7 @@ Tokenization adapts to language:
 - **CJK** (`zh` / `ja` / `ko`): 2–5-character natural phrases
 - **Space-separated** (`en` / `es` / `fr` / …): one token per word
 
-Long audio is automatically split into chunks (default 300 s, `SUBTITLE_CHUNK_SEC` / `--chunk-sec`) to avoid Gemini `MAX_TOKENS` truncation; chunk timestamps are re-offset and merged. `max_output_tokens=65535` is set explicitly, and `finish_reason=MAX_TOKENS` produces an actionable error.
+Long audio is automatically split into chunks (default 180 s, `SUBTITLE_CHUNK_SEC` / `--chunk-sec`) to avoid Gemini `MAX_TOKENS` truncation; chunk timestamps are re-offset and merged. `max_output_tokens=65535` is set explicitly, and any chunk that still hits `MAX_TOKENS` is automatically halved and retried down to a 30 s floor.
 
 Standalone use:
 ```bash
@@ -60,7 +60,7 @@ New environment variables (both optional, sensible defaults):
 | Variable | Default | Purpose |
 |---|---|---|
 | `GEMINI_SUBTITLE_MODEL` | `gemini-2.5-flash` | Audio-capable model for the subtitle pass |
-| `SUBTITLE_CHUNK_SEC` | `300` | Chunk length (s) for long-audio splitting |
+| `SUBTITLE_CHUNK_SEC` | `180` | Chunk length (s) for long-audio splitting; chunks that still hit `MAX_TOKENS` auto-halve to a 30 s floor |
 
 ### Docs
 

@@ -12,12 +12,34 @@ load_dotenv(override=True)
 
 app = typer.Typer()
 
+_D1_ENV_KEYS = ("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_KEY")
+
+
+def has_d1_env() -> bool:
+    """True when Cloudflare D1 environment variables are configured."""
+    return all(os.getenv(k) for k in _D1_ENV_KEYS)
+
+
+def _missing_d1_keys(db_id: str = "") -> list[str]:
+    missing = [k for k in _D1_ENV_KEYS if not os.getenv(k)]
+    if not db_id:
+        missing.append("PODCAST_D1_DB_ID (or db_id argument)")
+    return missing
+
+
+def _skip_result(reason: str) -> dict:
+    return {"success": False, "skipped": True, "errors": [{"message": reason}], "result": []}
+
 
 @app.command("d1_table_query")
 def d1_table_query(db_id: str, sql: str, sql_params: List[str] = []) -> dict:
     """
     https://developers.cloudflare.com/api/operations/cloudflare-d1-query-database
     """
+    if not has_d1_env() or not db_id:
+        reason = f"D1 not configured (missing {', '.join(_missing_d1_keys(db_id))}); skipping query"
+        logging.warning(reason)
+        return _skip_result(reason)
     account_id = os.getenv("CLOUDFLARE_ACCOUNT_ID")
     api_key = os.getenv("CLOUDFLARE_API_KEY")
 
@@ -50,6 +72,10 @@ def d1_db(db_id: str) -> dict:
     """
     https://developers.cloudflare.com/api/operations/cloudflare-d1-get-database
     """
+    if not has_d1_env() or not db_id:
+        reason = f"D1 not configured (missing {', '.join(_missing_d1_keys(db_id))}); skipping query"
+        logging.warning(reason)
+        return _skip_result(reason)
     account_id = os.getenv("CLOUDFLARE_ACCOUNT_ID")
     api_key = os.getenv("CLOUDFLARE_API_KEY")
 

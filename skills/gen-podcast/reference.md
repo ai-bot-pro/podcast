@@ -131,5 +131,5 @@ ALTER TABLE podcast ADD COLUMN subtitle_srt_url  text DEFAULT "";
 - 默认作者名为 `weedge`
 - 对话轮数默认随机 20–50 轮（可通过 `ROUND_CN` 环境变量控制）
 - Gemini 主模型 503 时自动降级到 `GEMINI_FALLBACK_MODEL`
-- 字幕生成会对长音频自动按 `SUBTITLE_CHUNK_SEC`（默认 300 秒）切片，每段独立调用 Gemini 并按偏移量合并；若仍撞 `MAX_TOKENS`，进一步降低该值（如 180）
+- 字幕生成会对长音频自动按 `SUBTITLE_CHUNK_SEC`（默认 180 秒）切片，每段独立调用 Gemini 并按偏移量合并；若某片仍撞 `MAX_TOKENS` 会自动对半重试，下界 30 秒（仍失败则丢弃该片并记录 ERROR）
 - `gen-podcast run` **默认关闭**字幕（`--no-subtitles` 等同默认行为）；需要时显式传 `--subtitles`，并确保 D1 已迁移 4 个 `subtitle_*_url` 列，否则 `insert_podcast_to_d1` 会报 `no such column`

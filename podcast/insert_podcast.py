@@ -12,8 +12,8 @@ from pydantic import BaseModel
 import typer
 from dotenv import load_dotenv
 
-from .aws.upload import r2_upload
-from .cloudflare.rest_api import d1_table_query
+from .aws.upload import r2_upload, has_r2_env
+from .cloudflare.rest_api import d1_table_query, has_d1_env
 from .image_compression import compress_img
 from .siliconflow_api import save_gen_image
 from .audio_length import get_audio_length
@@ -23,6 +23,10 @@ from .audio_length import get_audio_length
 load_dotenv(override=True)
 
 app = typer.Typer()
+
+DEFAULT_COVER_IMG_URL = (
+    "https://pub-f8da0a7ab3e74cc8a8081b2d4b8be851.r2.dev/1aae2d400fd64f699325f4d33e94ce30_60.jpg"
+)
 
 
 r"""
@@ -90,7 +94,8 @@ def get_podcast(
     quality: int = 60,
 ) -> Podcast:
     cover_img_url = ""
-    if title:
+    can_gen_cover = bool(os.getenv("SILICONCLOUD_API_KEY")) and has_r2_env()
+    if title and can_gen_cover:
         en_title = title
         if language != "en":
             language = "zh-CN" if language == "zh" else language
@@ -113,17 +118,34 @@ def get_podcast(
 
         gen_img_prompt = f"podcast cover image which content is about {en_title}"
         print(f"{gen_img_prompt}")
-        img_file = save_gen_image(gen_img_prompt, uuid.uuid4().hex)
-        cover_img_url = r2_upload("podcast", img_file)
+        try:
+            img_file = save_gen_image(gen_img_prompt, uuid.uuid4().hex)
+            cover_img_url = r2_upload("podcast", img_file)
 
-        compress_img_path = compress_img(img_path=img_file, quality=quality)
-        compress_img_url = r2_upload("podcast", compress_img_path)
-        logging.info(f"compress {img_file} to {compress_img_path} upload to r2: {compress_img_url}")
+            compress_img_path = compress_img(img_path=img_file, quality=quality)
+            compress_img_url = r2_upload("podcast", compress_img_path)
+            logging.info(
+                f"compress {img_file} to {compress_img_path} upload to r2: {compress_img_url}"
+            )
+            if not cover_img_url:
+                # R2 returned "" (e.g. upload failed) — fall back to default
+                raise RuntimeError("cover upload returned empty url")
+        except Exception as e:  # noqa: BLE001
+            logging.warning(
+                "cover art generation/upload failed (%s); falling back to DEFAULT_COVER_IMG_URL",
+                e,
+            )
+            cover_img_url = DEFAULT_COVER_IMG_URL
+    elif title and not can_gen_cover:
+        logging.info(
+            "Skipping cover art generation (need SILICONCLOUD_API_KEY + Cloudflare R2); using DEFAULT_COVER_IMG_URL"
+        )
+        cover_img_url = DEFAULT_COVER_IMG_URL
 
     audio_url = ""
     duration = 0
     if audio_file:
-        audio_url = r2_upload("podcast", audio_file)
+        audio_url = r2_upload("podcast", audio_file)  # returns "" when R2 not configured
         duration = get_audio_duration(audio_file, format=audio_file.split(".")[-1])
 
     podcast = Podcast(
@@ -135,7 +157,7 @@ def get_podcast(
         audio_url=audio_url,
         cover_img_url=cover_img_url,
         duration=duration,
-        audio_size=os.path.getsize(audio_file),
+        audio_size=os.path.getsize(audio_file) if audio_file and os.path.isfile(audio_file) else 0,
     )
     logging.info(f"podcast:{podcast}")
     return podcast
@@ -173,6 +195,14 @@ def insert_podcast_to_d1(
     now = datetime.now()
     formatted_time = now.strftime("%Y-%m-%d %H:%M:%S")
     db_id = os.getenv("PODCAST_D1_DB_ID")
+    if not db_id or not has_d1_env():
+        logging.warning(
+            "Cloudflare D1 not configured (need PODCAST_D1_DB_ID + CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_KEY); "
+            "skipping database insert for pid=%s title=%r",
+            podcast.pid,
+            title,
+        )
+        return False
     sql = (
         "replace into podcast("
         "pid,title,description,author,speakers,source,audio_url,audio_content,cover_img_url,"
@@ -204,7 +234,8 @@ def insert_podcast_to_d1(
     ]
 
     res = d1_table_query(db_id, sql, sql_params)
-    if res["success"] is True:
+    success = bool(res.get("success")) if isinstance(res, dict) else False
+    if success:
         if is_published:
             print(
                 f"insert podcast success, url: https://podcast-997.pages.dev/podcast/{podcast.pid}"
@@ -213,7 +244,7 @@ def insert_podcast_to_d1(
             print("insert podcast success")
     else:
         logging.error(f"insert podcast failed, res: {res}")
-    return res["success"]
+    return success
 
 
 @app.command("update_podcast_subtitles_to_d1")
@@ -243,7 +274,7 @@ def update_podcast_subtitles_to_d1(
     ]
     res = d1_table_query(db_id, sql, sql_params)
     print(res)
-    return res["success"]
+    return bool(res.get("success")) if isinstance(res, dict) else False
 
 
 @app.command("update_podcast_cover_to_d1")
@@ -262,7 +293,7 @@ def update_podcast_cover_to_d1(
     ]
     res = d1_table_query(db_id, sql, sql_params)
     print(res)
-    return res["success"]
+    return bool(res.get("success")) if isinstance(res, dict) else False
 
 
 @app.command("update_podcast_audio_size_to_d1")
@@ -271,6 +302,8 @@ def update_podcast_audio_size_to_d1():
     db_id = os.getenv("PODCAST_D1_DB_ID")
     select_sql = "select pid,audio_url,audio_size from podcast where audio_size=0;"
     select_res = d1_table_query(db_id, select_sql)
+    if not isinstance(select_res, dict) or select_res.get("skipped") or not select_res.get("result"):
+        return
     for item in select_res["result"][0]["results"]:
         file_name = item["audio_url"].split("/")[-1]
         file_path = f"./audios/podcast/{file_name}"
@@ -286,7 +319,7 @@ def update_podcast_audio_size_to_d1():
             item["pid"],
         ]
         res = d1_table_query(db_id, sql, sql_params)
-        if res["success"] is True:
+        if isinstance(res, dict) and res.get("success") is True:
             logging.info(
                 f"update podcast success, url: https://podcast-997.pages.dev/podcast/{item['pid']}"
             )

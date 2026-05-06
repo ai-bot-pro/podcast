@@ -11,6 +11,22 @@ load_dotenv(override=True)
 
 app = typer.Typer()
 
+_R2_ENV_KEYS = (
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CLOUDFLARE_ACCESS_KEY",
+    "CLOUDFLARE_SECRET_KEY",
+    "S3_BUCKET_URL",
+)
+
+
+def has_r2_env() -> bool:
+    """True when all Cloudflare R2 environment variables are configured."""
+    return all(os.getenv(k) for k in _R2_ENV_KEYS)
+
+
+def _missing_r2_keys() -> list[str]:
+    return [k for k in _R2_ENV_KEYS if not os.getenv(k)]
+
 
 @app.command("get_url")
 def get_url(file_name: str):
@@ -23,6 +39,13 @@ def get_url(file_name: str):
 
 @app.command("r2")
 def r2_upload(remote_folder: str, local_file: str) -> str:
+    if not has_r2_env():
+        logging.warning(
+            "Cloudflare R2 not configured (missing %s); skipping upload of %s",
+            ", ".join(_missing_r2_keys()),
+            local_file,
+        )
+        return ""
     account_id = os.getenv("CLOUDFLARE_ACCOUNT_ID")
     access_key = os.getenv("CLOUDFLARE_ACCESS_KEY")
     secret_key = os.getenv("CLOUDFLARE_SECRET_KEY")
